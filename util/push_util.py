@@ -1,8 +1,14 @@
 import json
+import re
+import ssl
+import smtplib
 
 import requests
 from datetime import datetime
 import pytz
+
+from email.mime.text import MIMEText
+from email.utils import formataddr
 
 
 def get_beijing_time():
@@ -25,13 +31,25 @@ class PushConfig:
                  push_plus_max=30,
                  push_wechat_webhook_key=None,
                  telegram_bot_token=None,
-                 telegram_chat_id=None):
+                 telegram_chat_id=None,
+                 email_smtp_host=None,
+                 email_smtp_port=465,
+                 email_smtp_user=None,
+                 email_smtp_pass=None,
+                 email_from=None,
+                 email_to=None):
         self.push_plus_token = push_plus_token
         self.push_plus_hour = push_plus_hour
         self.push_plus_max = int(push_plus_max) if push_plus_max else 30
         self.push_wechat_webhook_key = push_wechat_webhook_key
         self.telegram_bot_token = telegram_bot_token
         self.telegram_chat_id = telegram_chat_id
+        self.email_smtp_host = email_smtp_host
+        self.email_smtp_port = email_smtp_port
+        self.email_smtp_user = email_smtp_user
+        self.email_smtp_pass = email_smtp_pass
+        self.email_from = email_from
+        self.email_to = email_to
 
 
 def push_plus(token, title, content):
@@ -137,6 +155,8 @@ def push_telegram_bot(bot_token, chat_id, content):
 
 def push_results(exec_results, summary, config: PushConfig):
     """推送所有结果"""
+    # 邮件始终发送，不受推送时间窗口限制
+    push_to_email(exec_results, summary, config)
     if not_in_push_time_range(config):
         return
     push_to_push_plus(exec_results, summary, config)
@@ -239,3 +259,52 @@ def push_to_telegram_bot(exec_results, summary, config: PushConfig):
         push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, html)
     else:
         print("未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID 跳过telegram推送")
+
+
+def push_to_email(exec_results, summary, config: PushConfig):
+    """发送邮件通知，内容包含每个账号的：号码、步数、成功状态"""
+    if (not config.email_smtp_host or not config.email_smtp_user or
+            not config.email_smtp_pass):
+        print("未配置 EMAIL_SMTP_HOST/EMAIL_SMTP_USER/EMAIL_SMTP_PASS 跳过邮件推送")
+        return
+    lines = [summary, '']
+    for idx, exec_result in enumerate(exec_results, 1):
+        msg = exec_result.get('msg') or ''
+        # 从接口返回中提取步数：修改步数（19862）[success]
+        step = ''
+        step_match = re.search(r'[（(](\d+)[）)]', msg)
+        if step_match:
+            step = step_match.group(1)
+        success = exec_result.get('success') is True
+        status = '成功' if success else '失败'
+        line = f"{idx}. {exec_result.get('user')}    步数：{step or '-'}    [{status}]"
+        if not success:
+            line += f"    原因：{msg}"
+        lines.append(line)
+    content = '\n'.join(lines)
+    subject = f"{format_now()} 刷步数执行结果"
+    send_email(config, subject, content)
+
+
+def send_email(config: PushConfig, subject, content):
+    """通过 SMTP 发送纯文本邮件，端口465走SSL，其余尝试STARTTLS"""
+    from_addr = config.email_from or config.email_smtp_user
+    to_list = [t for t in str(config.email_to or config.email_smtp_user).split('#') if t.strip()]
+    msg = MIMEText(content, 'plain', 'utf-8')
+    msg['From'] = formataddr(('刷步数通知', from_addr))
+    msg['To'] = ', '.join(to_list)
+    msg['Subject'] = subject
+    try:
+        port = int(config.email_smtp_port or 465)
+        if port == 465:
+            server = smtplib.SMTP_SSL(config.email_smtp_host, port, timeout=20)
+        else:
+            server = smtplib.SMTP(config.email_smtp_host, port, timeout=20)
+        with server:
+            if port != 465:
+                server.starttls(context=ssl.create_default_context())
+            server.login(config.email_smtp_user, config.email_smtp_pass)
+            server.sendmail(from_addr, to_list, msg.as_string())
+        print(f"邮件推送成功，收件人：{', '.join(to_list)}")
+    except Exception as e:
+        print(f"邮件推送失败: {e}")

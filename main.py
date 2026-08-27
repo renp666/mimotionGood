@@ -321,7 +321,13 @@ if __name__ == "__main__":
             "TELEGRAM_BOT_TOKEN": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             "TELEGRAM_CHAT_ID": os.environ.get("TELEGRAM_CHAT_ID", ""),
             "SLEEP_GAP": os.environ.get("SLEEP_GAP", "5"),
-            "USE_CONCURRENT": os.environ.get("USE_CONCURRENT", "False")
+            "USE_CONCURRENT": os.environ.get("USE_CONCURRENT", "False"),
+            "EMAIL_SMTP_HOST": os.environ.get("EMAIL_SMTP_HOST", ""),
+            "EMAIL_SMTP_PORT": os.environ.get("EMAIL_SMTP_PORT", "465"),
+            "EMAIL_SMTP_USER": os.environ.get("EMAIL_SMTP_USER", ""),
+            "EMAIL_SMTP_PASS": os.environ.get("EMAIL_SMTP_PASS", ""),
+            "EMAIL_FROM": os.environ.get("EMAIL_FROM", ""),
+            "EMAIL_TO": os.environ.get("EMAIL_TO", "")
         }
     else:
         print("未配置CONFIG或USER/PWD环境变量，无法执行。请在本地创建.env文件或配置环境变量。")
@@ -335,7 +341,13 @@ if __name__ == "__main__":
         push_plus_max=get_int_value_default(config, 'PUSH_PLUS_MAX', 30),
         push_wechat_webhook_key=config.get('PUSH_WECHAT_WEBHOOK_KEY'),
         telegram_bot_token=config.get('TELEGRAM_BOT_TOKEN'),
-        telegram_chat_id=config.get('TELEGRAM_CHAT_ID')
+        telegram_chat_id=config.get('TELEGRAM_CHAT_ID'),
+        email_smtp_host=config.get('EMAIL_SMTP_HOST'),
+        email_smtp_port=config.get('EMAIL_SMTP_PORT') or 465,
+        email_smtp_user=config.get('EMAIL_SMTP_USER'),
+        email_smtp_pass=config.get('EMAIL_SMTP_PASS'),
+        email_from=config.get('EMAIL_FROM'),
+        email_to=config.get('EMAIL_TO')
     )
     sleep_seconds = config.get('SLEEP_GAP')
     if sleep_seconds is None or sleep_seconds == '':
