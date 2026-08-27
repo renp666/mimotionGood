@@ -39,17 +39,27 @@ def login_access_token(user, password) -> (str | None, str | None):
     cipher_data = encrypt_data(plaintext, HM_AES_KEY, HM_AES_IV)
 
     url1 = 'https://api-user.zepp.com/v2/registrations/tokens'
-    r1 = requests.post(url1, data=cipher_data, headers=headers, allow_redirects=False, timeout=5)
-    if r1.status_code != 303:
+    retry_times = 3  # 最多尝试3次（1次原始 + 2次错峰重试）
+    for attempt in range(1, retry_times + 1):
+        r1 = requests.post(url1, data=cipher_data, headers=headers, allow_redirects=False, timeout=5)
+        if r1.status_code == 303:
+            try:
+                location = r1.headers["Location"]
+                code = get_access_token(location)
+                if code is None:
+                    return None, "获取accessToken失败 %s" % get_error_code(location)
+                return code, None
+            except:
+                return None, f"获取accessToken异常:{traceback.format_exc()}"
+        # 429=登录频次限流，5xx=服务端临时异常；这两种情况错峰等待后重试
+        if r1.status_code in (429, 500, 502, 503, 504) and attempt < retry_times:
+            wait = 30 * attempt  # 30s, 60s 递增等待，错开登录频率
+            print("%s 登录被限流或服务异常(status=%d)，等待%ds后第%d次重试【错峰】..." %
+                  (format_now(), r1.status_code, wait, attempt + 1))
+            time.sleep(wait)
+            continue
         return None, "登录异常，status: %d" % r1.status_code
-    try:
-        location = r1.headers["Location"]
-        code = get_access_token(location)
-        if code is None:
-            return None, "获取accessToken失败 %s" % get_error_code(location)
-    except:
-        return None, f"获取accessToken异常:{traceback.format_exc()}"
-    return code, None
+    return None, "登录异常，status: unknown"
 
 
 # 获取登录code
